@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A.F.E.R.S. Web IoT Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 sm:p-4 flex flex-wrap gap-2 justify-between items-center shadow-md">
+        <div class="flex items-center space-x-3">
+            <div class="w-3 h-3 bg-red-500 rounded-full animate-ping"></div>
+            <h1 class="text-lg sm:text-xl font-bold tracking-wide leading-tight">
+                &mdash;A.F.E.R.S. Web
+                <span class="block text-xs text-slate-400 font-normal">&mdash;Dashboard</span>
+            </h1>
+        </div>
+        <div class="flex items-center space-x-1 bg-slate-800 px-3 py-1 rounded-full border border-slate-700 text-xs sm:text-sm">
+            <span id="connection-status-dot" class="w-2.5 h-2.5 bg-yellow-500 rounded-full"></span>
+            <span id="connection-text" class="text-slate-300">Connecting...</span>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+
+        <!-- Control panel -->
+        <section class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col justify-between shadow-xl">
+            <div>
+                <h2 class="text-lg font-semibold text-slate-200 mb-2">Emergency Response Control</h2>
+                <p class="text-slate-400 text-sm mb-4">Dispatch or stop the miniature ESP32 robot through the HiveMQ cloud broker.</p>
+            </div>
+
+            <div class="flex flex-col items-center justify-center py-6 sm:py-10 gap-4">
+                <div class="flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
+                    <button id="dispatch-btn" onclick="sendCommand('start')"
+                        class="relative group w-40 h-40 sm:w-48 sm:h-48 bg-gradient-to-tr from-red-600 to-orange-500 hover:from-red-500 hover:to-orange-400 text-white font-bold rounded-full shadow-[0_0_30px_rgba(239,68,68,0.4)] transition-all transform active:scale-95 flex flex-col items-center justify-center border-4 border-red-400/30">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 sm:h-16 mb-2 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span class="text-base sm:text-lg tracking-wider">DISPATCH</span>
+                    </button>
+
+                    <button id="stop-btn" onclick="sendCommand('stop')"
+                        class="w-28 h-28 sm:w-32 sm:h-32 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-full shadow-lg transition-all transform active:scale-95 flex flex-col items-center justify-center border-4 border-slate-500/30">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 sm:h-10 mb-1" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="6" width="12" height="12" rx="2" />
+                        </svg>
+                        <span class="text-sm tracking-wider">STOP</span>
+                    </button>
+                </div>
+                <p id="dispatch-subtext" class="text-xs text-slate-400 text-center break-all">
+                    Publishes <code class="text-orange-400">start</code> / <code class="text-orange-400">stop</code> to the MQTT broker
+                </p>
+            </div>
+
+            <div class="bg-slate-950 p-3 sm:p-4 rounded-xl border border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-0 text-center text-sm">
+                <div>
+                    <span class="block text-slate-500 text-xs">ROBOT STATE</span>
+                    <span id="robot-state" class="font-mono font-bold text-amber-400">STANDBY</span>
+                </div>
+                <div>
+                    <span class="block text-slate-500 text-xs">FLAME SENSOR</span>
+                    <span id="sensor-state" class="font-mono font-bold text-slate-300">--</span>
+                </div>
+                <div>
+                    <span class="block text-slate-500 text-xs">WATER PUMP</span>
+                    <span id="pump-state" class="font-mono font-bold text-slate-300">--</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Live feed -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col shadow-xl min-w-0">
+            <h2 class="text-lg font-semibold text-slate-200 mb-2">Live Feed</h2>
+            <p class="text-slate-400 text-xs mb-4 break-all">Messages on topic <code id="topic-label" class="text-cyan-400"></code></p>
+
+            <div id="console-log" class="bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-300 h-56 sm:h-64 lg:h-80 overflow-y-auto flex flex-col space-y-2 break-words">
+                <span class="text-slate-500">[System] Initializing client...</span>
+            </div>
+
+            <div class="mt-4 flex justify-between items-center text-xs text-slate-500">
+                <span>Broker: broker.hivemq.com</span>
+                <button onclick="clearLogs()" class="hover:text-slate-300 underline">Clear Log</button>
+            </div>
+        </section>
+    </main>
+
+    <footer class="text-center py-4 text-xs text-slate-600 border-t border-slate-900">
+        Capstone Project Dashboard &bull; ESP32 MQTT Architecture
+    </footer>
+
+    <script>
+        // ====== SETTINGS (must match the ESP32 code) ======
+        const TOPIC = "yourteam-capstone/fire/alert/dispatch";
+        // Optional: if the ESP32 publishes its status (e.g. "extinguishing", "flame:detected", "pump:on"), the dashboard shows it here.
+        const STATUS_TOPIC = "yourteam-capstone/fire/alert/status";
+        const BROKER_URL = "wss://broker.hivemq.com:8884/mqtt";
+        // ===================================================
+
+        document.getElementById('topic-label').textContent = TOPIC;
+
+        const dot = document.getElementById('connection-status-dot');
+        const connText = document.getElementById('connection-text');
+        const robotState = document.getElementById('robot-state');
+        const sensorState = document.getElementById('sensor-state');
+        const pumpState = document.getElementById('pump-state');
+
+        function logMessage(msg, type = "info") {
+            const consoleLog = document.getElementById('console-log');
+            const timeStr = new Date().toLocaleTimeString();
+            const span = document.createElement('span');
+            const styles = {
+                publish: ["text-orange-400", `[${timeStr}] PUB -> ${msg}`],
+                ack:     ["text-cyan-400",   `[${timeStr}] ROBOT -> ${msg}`],
+                ok:      ["text-green-400",  `[${timeStr}] ${msg}`],
+                error:   ["text-red-400",    `[${timeStr}] ${msg}`],
+                info:    ["text-slate-400",  `[${timeStr}] ${msg}`]
+            };
+            const [cls, text] = styles[type] || styles.info;
+            span.className = cls;
+            span.innerText = text;
+            consoleLog.appendChild(span);
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+        }
+
+        function setConnection(color, text) {
+            dot.className = `w-2.5 h-2.5 rounded-full ${color}`;
+            connText.textContent = text;
+        }
+
+        const client = mqtt.connect(BROKER_URL, {
+            clientId: "dashboard_" + Math.random().toString(16).slice(2, 10),
+            reconnectPeriod: 3000
+        });
+
+        client.on("connect", () => {
+            setConnection("bg-green-500", "Broker Connected");
+            logMessage("Connected to broker.hivemq.com", "ok");
+            client.subscribe(STATUS_TOPIC, err => {
+                if (!err) logMessage("Listening for robot status.", "info");
+            });
+        });
+        client.on("reconnect", () => setConnection("bg-yellow-500", "Reconnecting..."));
+        client.on("error", () => { setConnection("bg-red-500", "Connection error"); logMessage("Connection error", "error"); });
+        client.on("close", () => { setConnection("bg-red-500", "Disconnected"); });
+
+        // Robot status feedback (only works once the ESP32 publishes to STATUS_TOPIC)
+        client.on("message", (topic, payload) => {
+            const msg = payload.toString();
+            logMessage(msg, "ack");
+            const m = msg.toLowerCase();
+            if (m.includes("flame")) {
+                const found = m.includes("detect") || m.includes("on") || m.includes("yes");
+                sensorState.textContent = found ? "DETECTED" : "CLEAR";
+                sensorState.className = "font-mono font-bold " + (found ? "text-orange-500" : "text-slate-300");
+            }
+            if (m.includes("pump")) {
+                const on = m.includes("on") || m.includes("pumping");
+                pumpState.textContent = on ? "PUMPING" : "IDLE";
+                pumpState.className = "font-mono font-bold " + (on ? "text-blue-400" : "text-slate-300");
+            }
+            if (m.includes("standby") || m.includes("stopped")) setRobot("STANDBY", "text-amber-400");
+            else if (m.includes("return")) setRobot("RETURNING", "text-cyan-400");
+            else if (m.includes("extinguish")) setRobot("EXTINGUISHING", "text-blue-400");
+            else if (m.includes("search") || m.includes("moving")) setRobot("SEARCHING", "text-orange-400");
+        });
+
+        function setRobot(text, colorClass, pulse = false) {
+            robotState.textContent = text;
+            robotState.className = `font-mono font-bold ${colorClass} ${pulse ? "animate-pulse" : ""}`;
+        }
+
+        function sendCommand(cmd) {
+            if (!client.connected) {
+                logMessage("Not connected to broker - command not sent.", "error");
+                return;
+            }
+            client.publish(TOPIC, cmd, err => {
+                if (err) { logMessage("Publish failed: " + err.message, "error"); return; }
+                logMessage(cmd, "publish");
+            });
+            if (cmd === "start") {
+                setRobot("DISPATCHED", "text-red-500", true);
+            } else {
+                setRobot("STOPPED", "text-amber-400");
+                sensorState.textContent = "--"; sensorState.className = "font-mono font-bold text-slate-300";
+                pumpState.textContent = "--"; pumpState.className = "font-mono font-bold text-slate-300";
+            }
+        }
+
+        function clearLogs() {
+            document.getElementById('console-log').innerHTML = '<span class="text-slate-500">[System] Log cleared.</span>';
+        }
+    </script>
+</body>
+</html>
